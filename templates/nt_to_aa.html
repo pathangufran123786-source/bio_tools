@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nucleotide → Amino Acid</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    textarea { width: 100%; max-width: 900px; }
+    .msg { padding: 8px; border-radius: 4px; margin-bottom: 12px; }
+    .danger { background:#fde2e2; border:1px solid #f5c2c7; }
+    .warning { background:#fff4e5; border:1px solid #ffd7a8; }
+  </style>
+</head>
+<body>
+  <h1>Nucleotide → Amino Acid</h1>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="msg {{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <form method="post">
+    <label for="sequence">Paste nucleotide sequence (DNA or RNA):</label><br>
+    <textarea name="sequence" id="sequence" rows="8" placeholder="e.g. ATGCGT...">{{ input_seq|default('') }}</textarea><br><br>
+
+    <label for="frame">Reading frame:</label>
+    <select name="frame" id="frame">
+      <option value="1" {% if frame==1 %}selected{% endif %}>Frame 1</option>
+      <option value="2" {% if frame==2 %}selected{% endif %}>Frame 2</option>
+      <option value="3" {% if frame==3 %}selected{% endif %}>Frame 3</option>
+    </select>
+
+    &nbsp;&nbsp;
+    <label for="table">Translation table:</label>
+    <select name="table" id="table">
+      <option value="1" {% if table==1 %}selected{% endif %}>Standard (1)</option>
+      <option value="11" {% if table==11 %}selected{% endif %}>Bacterial (11)</option>
+      <option value="2" {% if table==2 %}selected{% endif %}>Vertebrate Mitochondrial (2)</option>
+    </select>
+
+    &nbsp;&nbsp;
+    <!-- Force checkbox checked by default -->
+    <label>
+      <input type="checkbox" name="keep_stops" {% if keep_stops or keep_stops is not defined %}checked{% endif %}>
+      Keep stop codons (*) in output
+    </label>
+    <br><br>
+
+    <button type="submit">Translate</button>
+    <a href="{{ url_for('home') }}" style="margin-left:16px">← Back to Home</a>
+  </form>
+
+  {% if result is not none %}
+    <h3>Translated Protein (single-letter code)</h3>
+    {% if result == "" %}
+      <p><em>No amino acids (sequence too short for the selected frame).</em></p>
+    {% else %}
+      <pre style="padding:12px; border:1px solid #ddd; max-width:900px; white-space:pre-wrap;">{{ result }}</pre>
+      <p><strong>Length (aa):</strong> {{ result|length }}</p>
+    {% endif %}
+  {% endif %}
+</body>
+</html>

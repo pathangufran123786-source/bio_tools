@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>BLAST</title></head>
+<body>
+  <h1>BLAST</h1>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <ul>
+      {% for cat, msg in messages %}
+        <li><strong>{{ cat }}:</strong> {{ msg }}</li>
+      {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+
+  <form method="post">
+    <label>Sequence (DNA/protein):</label><br>
+    <textarea name="sequence" rows="6" cols="80"></textarea><br>
+    <label>Program:</label>
+    <select name="program">
+      <option value="blastn">blastn (nucleotide)</option>
+      <option value="blastp">blastp (protein)</option>
+    </select>
+    <label>Database:</label>
+    <input type="text" name="db" value="nt">
+    <button type="submit">Run BLAST</button>
+  </form>
+
+  {% if result %}
+    {% if result.hits %}
+      <h3>Top Hits</h3>
+      <table border="1" cellpadding="6">
+        <tr>
+          <th>Title</th>
+          <th>Length</th>
+          <th>Score</th>
+          <th>E-value</th>
+          <th>Identity</th>
+          <th>% Identity</th>
+        </tr>
+        {% for hit in result.hits %}
+        <tr>
+          <td>{{ hit.title }}</td>
+          <td>{{ hit.length }}</td>
+          <td>{{ hit.score }}</td>
+          <td>{{ hit.e_value }}</td>
+          <td>{{ hit.identity }}/{{ hit.align_length }}</td>
+          <td>{{ hit.pct_identity }}%</td>
+        </tr>
+        {% endfor %}
+      </table>
+    {% elif result.note %}
+      <p><em>{{ result.note }}</em></p>
+    {% elif result.error %}
+      <p><strong>Error:</strong> {{ result.error }}</p>
+    {% endif %}
+  {% endif %}
+
+  <p><a href="{{ url_for('home') }}">&larr; Back to Home</a></p>
+</body>
+</html>

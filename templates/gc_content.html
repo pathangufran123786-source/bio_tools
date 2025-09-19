@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>GC Content</title></head>
+<body>
+  <h1>GC Content Calculator</h1>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <ul>
+      {% for cat, msg in messages %}
+        <li><strong>{{ cat }}:</strong> {{ msg }}</li>
+      {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+
+  <form method="post">
+    <label>Paste nucleotide sequence (A/T/G/C/U):</label><br>
+    <textarea name="sequence" rows="6" cols="80"></textarea><br>
+    <button type="submit">Calculate GC%</button>
+  </form>
+
+  {% if result %}
+    <h3>Results</h3>
+    <ul>
+      <li>Length (valid bases): {{ result.length }}</li>
+      <li>GC count: {{ result.gc_count }}</li>
+      <li>GC%: {{ result.gc_percent }}%</li>
+      <li>AT%: {{ result.at_percent }}%</li>
+    </ul>
+  {% endif %}
+
+  <p><a href="{{ url_for('home') }}">&larr; Back to Home</a></p>
+</body>
+</html>
