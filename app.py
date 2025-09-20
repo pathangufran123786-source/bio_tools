@@ -20,7 +20,7 @@ stop_codons = standard_table.stop_codons  # list of stop codons
 
 
 @app.route("/")
-def index():
+def home():
     return render_template("index.html")
 
 
