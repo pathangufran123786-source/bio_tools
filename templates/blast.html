@@ -16,60 +16,99 @@
     <div id="status"></div>
     <pre id="result" style="white-space: pre-wrap;"></pre>
 
-    <script>
-      const form = document.getElementById('blastForm');
-      const statusEl = document.getElementById('status');
-      const resultEl = document.getElementById('result');
-      let pollInterval = null;
+   <script>
+  const form = document.getElementById('blastForm');
+  const statusEl = document.getElementById('status');
+  const resultEl = document.getElementById('result');
+  let pollInterval = null;
 
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        statusEl.textContent = 'Submitting job...';
-        resultEl.textContent = '';
+  function renderHits(hits) {
+    if (!hits || hits.length === 0) {
+      resultEl.innerHTML = '<em>No hits found.</em>';
+      return;
+    }
+    let html = '<table border="1" cellpadding="6" style="border-collapse:collapse;"><thead><tr><th>#</th><th>Title</th><th>Expect</th><th>Score</th><th>% Identity</th><th>Length</th></tr></thead><tbody>';
+    hits.forEach((h, i) => {
+      html += `<tr>
+        <td>${i+1}</td>
+        <td style="max-width:600px">${(h.title||'').replace(/</g,'&lt;')}</td>
+        <td>${h.expect ?? ''}</td>
+        <td>${h.score ?? ''}</td>
+        <td>${h.pct_identity ?? ''}</td>
+        <td>${h.length ?? h.align_length ?? ''}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    resultEl.innerHTML = html;
+  }
 
-        const seq = document.getElementById('sequence').value;
-        if (!seq.trim()) { statusEl.textContent = 'Enter a sequence.'; return; }
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    statusEl.textContent = 'Submitting job...';
+    resultEl.textContent = '';
 
-        try {
-          const resp = await fetch('/blast', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ sequence: seq })
-          });
+    const seq = document.getElementById('sequence').value;
+    if (!seq.trim()) { statusEl.textContent = 'Enter a sequence.'; return; }
 
-          if (!resp.ok) {
-            const err = await resp.json().catch(()=>({}));
-            statusEl.textContent = 'Submit error: ' + (err.error || resp.status);
-            return;
-          }
-
-          const j = await resp.json();
-          const jobId = j.job_id;
-          statusEl.textContent = 'Job submitted: ' + jobId + ' — polling...';
-
-          if (pollInterval) clearInterval(pollInterval);
-          pollInterval = setInterval(async () => {
-            const sres = await fetch('/blast_status/' + jobId);
-            if (!sres.ok) {
-              statusEl.textContent = 'Status fetch error';
-              clearInterval(pollInterval);
-              return;
-            }
-            const sj = await sres.json();
-            statusEl.textContent = 'Status: ' + sj.status;
-            if (sj.status === 'done') {
-              clearInterval(pollInterval);
-              resultEl.textContent = sj.result;
-            } else if (sj.status === 'error') {
-              clearInterval(pollInterval);
-              resultEl.textContent = 'Error: ' + sj.result;
-            }
-          }, 3000);
-
-        } catch (err) {
-          statusEl.textContent = 'Network error: ' + err;
-        }
+    try {
+      const resp = await fetch('/blast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ sequence: seq })
       });
-    </script>
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(()=>({}));
+        statusEl.textContent = 'Submit error: ' + (err.error || resp.status);
+        return;
+      }
+
+      const j = await resp.json();
+      const jobId = j.job_id;
+      statusEl.textContent = 'Job submitted: ' + jobId + ' — polling...';
+
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(async () => {
+        const sres = await fetch('/blast_status/' + jobId);
+        if (!sres.ok) {
+          statusEl.textContent = 'Status fetch error';
+          clearInterval(pollInterval);
+          return;
+        }
+        const sj = await sres.json();
+        statusEl.textContent = 'Status: ' + sj.status;
+        if (sj.status === 'done') {
+          clearInterval(pollInterval);
+          // sj.result is an object with summary and raw_xml
+          const res = sj.result || {};
+          const summary = res.summary || [];
+          renderHits(summary);
+
+          // add download link for raw XML
+          const rawXml = res.raw_xml || '';
+          if (rawXml) {
+            const blob = new Blob([rawXml], {type: "application/xml"});
+            const url = URL.createObjectURL(blob);
+            const dl = document.createElement('a');
+            dl.href = url;
+            dl.download = `blast_result_${jobId}.xml`;
+            dl.textContent = 'Download full BLAST XML';
+            dl.style.display = 'inline-block';
+            dl.style.marginTop = '12px';
+            resultEl.appendChild(document.createElement('div'));
+            resultEl.appendChild(dl);
+          }
+        } else if (sj.status === 'error') {
+          clearInterval(pollInterval);
+          const err = (sj.result && sj.result.error) ? sj.result.error : JSON.stringify(sj.result);
+          resultEl.textContent = 'Error: ' + err;
+        }
+      }, 3000);
+
+    } catch (err) {
+      statusEl.textContent = 'Network error: ' + err;
+    }
+  });
+</script>
   </body>
 </html>
