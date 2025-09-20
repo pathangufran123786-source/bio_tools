@@ -1,23 +1,26 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash
+import io
+import threading
+import uuid
+
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from Bio.Seq import Seq
 from Bio.Data import CodonTable
-
-# Biopython BLAST & Entrez imports
 from Bio.Blast import NCBIWWW, NCBIXML
 from Bio import Entrez
-import io
 
 # Read email & secret key from environment (required by NCBI + for security)
 ENTREZ_EMAIL = os.environ.get("ENTREZ_EMAIL", "pathangufran123786@gmail.com")
 SECRET_KEY = os.environ.get("SECRET_KEY", "replace-this-with-a-secure-random-key")
 
-Entrez.email = ENTREZ_EMAIL   # NCBI requires a valid email
+# Set Entrez email globally (NCBI requires a valid email)
+Entrez.email = ENTREZ_EMAIL
 
 app = Flask(__name__)
-app.secret_key = SECRET_KEY   # Flask sessions / flash messages
+app.secret_key = SECRET_KEY  # Flask sessions / flash messages
 
-# Simple AA -> codon mapping using the first codon for each amino acid
+
+ # Simple AA -> codon mapping using the first codon for each amino acid
 standard_table = CodonTable.unambiguous_dna_by_name["Standard"]
 aa_to_codons = {}
 for codon, aa in standard_table.forward_table.items():
@@ -29,7 +32,7 @@ def home():
     return render_template("index.html")
 
 
-@app.route("/nt_to_aa", methods=["GET", "POST"])
+@app.route("/nt_to_aa", methods=["GET", "POST"])  
 def nt_to_aa():
     result = None
     input_seq = ""
@@ -124,67 +127,58 @@ def gc_content():
     return render_template("gc_content.html", result=result, input_seq=input_seq)
 
 
-@app.route('/blast', methods=['GET', 'POST'])
-def blast():
-    if request.method == 'GET':
-        return render_template('blast.html')
+import threading
+import uuid
+from flask import jsonify
 
-    seq = request.form.get('sequence', '').strip()
-    seq = seq.replace('\r', '').replace(' ', '').replace('\n', '')
+# Simple in-memory job store
+JOBS = {}  # job_id -> {"status": "running"|"done"|"error", "result": "<xml/text>"}
 
-    if not seq:
-        return render_template('blast.html', error="Please provide a sequence.")
-
-    MAX_LEN = 10000  # keep NCBI happy
-    if len(seq) > MAX_LEN:
-        return render_template('blast.html', error=f"Sequence too long (>{MAX_LEN} nt). Shorten it.")
-
+def run_blast(job_id, seq, program="blastn", database="nt"):
+    """
+    Run BLAST in a background thread and save result in JOBS.
+    """
     try:
-        program = "blastn"       # choose blastn / blastx / tblastn
-        database = "nt"          # or "refseq_rna", "swissprot", etc.
+        # Use the Entrez email you already configured earlier
+        from Bio import Entrez
+        Entrez.email = os.environ.get("ENTREZ_EMAIL", "pathangufran123786@gmail.com")
 
-        # Run BLAST on NCBI servers
-        result_handle = NCBIWWW.qblast(program, database, seq)
+        handle = NCBIWWW.qblast(program, database, seq)
+        result_text = handle.read()
+        handle.close()
 
-        # Parse XML result
-        blast_record = NCBIXML.read(result_handle)
-
-        hits = []
-        for alignment in blast_record.alignments[:10]:  # top 10
-            for hsp in alignment.hsps[:1]:  # first HSP
-                pct_identity = None
-                try:
-                    pct_identity = round((float(hsp.identities) / float(hsp.align_length)) * 100, 2)
-                except Exception:
-                    pct_identity = None
-
-                hits.append({
-                    'title': alignment.title,
-                    'length': alignment.length,
-                    'hsp_score': getattr(hsp, 'score', None),
-                    'e_value': getattr(hsp, 'expect', None),
-                    'identity': getattr(hsp, 'identities', None),
-                    'align_length': getattr(hsp, 'align_length', None),
-                    'pct_identity': pct_identity,
-                    'query_seq': getattr(hsp, 'query', None),
-                    'match_seq': getattr(hsp, 'match', None),
-                    'sbjct_seq': getattr(hsp, 'sbjct', None),
-                })
-                break
-
-        raw_xml = None
-        if not hits:
-            try:
-                result_handle.seek(0)
-                raw_xml = result_handle.read()
-            except Exception:
-                raw_xml = None
-
-        return render_template('blast_results.html', hits=hits, raw_xml=raw_xml, seq=seq)
-
+        JOBS[job_id]["status"] = "done"
+        JOBS[job_id]["result"] = result_text
     except Exception as e:
-        return render_template('blast.html', error=f"BLAST failed: {str(e)}")
+        JOBS[job_id]["status"] = "error"
+        JOBS[job_id]["result"] = str(e)
 
+@app.route("/blast", methods=["GET", "POST"])
+def blast():
+    if request.method == "GET":
+        return render_template("blast.html")
+
+    seq = request.form.get("sequence", "").strip()
+    if not seq:
+        return jsonify({"error": "no sequence provided"}), 400
+
+    job_id = str(uuid.uuid4())
+    JOBS[job_id] = {"status": "running", "result": None}
+
+    # Start BLAST in a background thread
+    t = threading.Thread(target=run_blast, args=(job_id, seq))
+    t.daemon = True
+    t.start()
+
+    # Return job id immediately (JSON)
+    return jsonify({"job_id": job_id}), 202
+
+@app.route("/blast_status/<job_id>", methods=["GET"])
+def blast_status(job_id):
+    job = JOBS.get(job_id)
+    if not job:
+        return jsonify({"error": "job not found"}), 404
+    return jsonify(job)
 
 
 if __name__ == "__main__":

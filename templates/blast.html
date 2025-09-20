@@ -1,25 +1,75 @@
 <!doctype html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <title>BLAST form</title>
-</head>
-<body>
-  <h1>BLAST Tool</h1>
+  <head>
+    <meta charset="utf-8" />
+    <title>BLAST</title>
+  </head>
+  <body>
+    <h2>BLAST (async)</h2>
 
-  {% if error %}
-    <p style="color: red;">{{ error }}</p>
-  {% endif %}
+    <form id="blastForm">
+      <textarea id="sequence" name="sequence" rows="10" cols="80"
+        placeholder="Paste nucleotide sequence or FASTA"></textarea><br>
+      <button type="submit">Run BLAST</button>
+    </form>
 
-  <form method="post" action="{{ url_for('blast') }}">
-    <label for="sequence">Sequence (DNA/RNA):</label><br>
-    <textarea id="sequence" name="sequence" rows="8" cols="80"
-      placeholder="Paste nucleotide sequence here...">{{ request.form.sequence or '' }}</textarea>
-    <br><br>
-    <button type="submit">Run BLAST (NCBI)</button>
-  </form>
+    <div id="status"></div>
+    <pre id="result" style="white-space: pre-wrap;"></pre>
 
-  <p>Note: This tool runs BLAST on NCBI servers. Short sequences are recommended.</p>
-  <p><a href="{{ url_for('home') }}">Back to Home</a></p>
-</body>
+    <script>
+      const form = document.getElementById('blastForm');
+      const statusEl = document.getElementById('status');
+      const resultEl = document.getElementById('result');
+      let pollInterval = null;
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        statusEl.textContent = 'Submitting job...';
+        resultEl.textContent = '';
+
+        const seq = document.getElementById('sequence').value;
+        if (!seq.trim()) { statusEl.textContent = 'Enter a sequence.'; return; }
+
+        try {
+          const resp = await fetch('/blast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ sequence: seq })
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(()=>({}));
+            statusEl.textContent = 'Submit error: ' + (err.error || resp.status);
+            return;
+          }
+
+          const j = await resp.json();
+          const jobId = j.job_id;
+          statusEl.textContent = 'Job submitted: ' + jobId + ' — polling...';
+
+          if (pollInterval) clearInterval(pollInterval);
+          pollInterval = setInterval(async () => {
+            const sres = await fetch('/blast_status/' + jobId);
+            if (!sres.ok) {
+              statusEl.textContent = 'Status fetch error';
+              clearInterval(pollInterval);
+              return;
+            }
+            const sj = await sres.json();
+            statusEl.textContent = 'Status: ' + sj.status;
+            if (sj.status === 'done') {
+              clearInterval(pollInterval);
+              resultEl.textContent = sj.result;
+            } else if (sj.status === 'error') {
+              clearInterval(pollInterval);
+              resultEl.textContent = 'Error: ' + sj.result;
+            }
+          }, 3000);
+
+        } catch (err) {
+          statusEl.textContent = 'Network error: ' + err;
+        }
+      });
+    </script>
+  </body>
 </html>
