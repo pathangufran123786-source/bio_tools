@@ -7,47 +7,48 @@
     table { border-collapse: collapse; margin-top: 12px; }
     th, td { border: 1px solid #ccc; padding: 6px 8px; }
     th { background:#efefef; }
-    pre { background:#fafafa; padding:10px; border:1px solid #eee; }
+    pre { background:#fafafa; padding:10px; border:1px solid #eee; white-space: pre-wrap; word-wrap: break-word; }
   </style>
 </head>
 <body>
   <h1>BLAST Results</h1>
 
-  {# If server passed a parsed result object with hits, show a neat table #}
-  {% if result and result.hits %}
+  {% if hits and hits|length > 0 %}
     <h2>Top Hits</h2>
     <table>
       <tr>
-        <th>Title</th>
-        <th>Length</th>
-        <th>Score</th>
-        <th>E-value</th>
-        <th>Identity / Align length</th>
-        <th>% Identity</th>
+        <th>Title</th><th>Length</th><th>Score</th><th>E-value</th>
+        <th>Identity</th><th>% Identity</th>
       </tr>
-      {% for hit in result.hits %}
-      <tr>
-        <td>{{ hit.title }}</td>
-        <td>{{ hit.length }}</td>
-        <td>{{ "%.1f"|format(hit.score) if hit.score is not none else "-" }}</td>
-        <td>{{ hit.e_value if hit.e_value is not none else "-" }}</td>
-        <td>{{ hit.identity }} / {{ hit.align_length }}</td>
-        <td>{{ "%.2f"|format(hit.pct_identity) if hit.pct_identity is not none else "-" }}</td>
-      </tr>
+      {% for h in hits %}
+        <tr>
+          <td>{{ h.title }}</td>
+          <td>{{ h.length }}</td>
+          <td>{{ h.hsp_score or '-' }}</td>
+          <td>{{ h.e_value or '-' }}</td>
+          <td>{{ h.identity or '-' }} / {{ h.align_length or '-' }}</td>
+          <td>{{ h.pct_identity if h.pct_identity is not none else '-' }}</td>
+        </tr>
       {% endfor %}
     </table>
 
-    <p><a href="{{ url_for('blast') }}">⬅ Back to BLAST</a></p>
+    <h3>First Hit Alignment</h3>
+    {% if hits[0].query_seq %}
+      <pre>
+Query:  {{ hits[0].query_seq }}
+Match:  {{ hits[0].match_seq }}
+Sbjct:  {{ hits[0].sbjct_seq }}
+      </pre>
+    {% endif %}
 
   {% elif raw_xml %}
-    {# fallback: display raw XML if parsing not available #}
-    <p><em>No parsed hits available — showing raw BLAST XML:</em></p>
-    <pre style="white-space: pre-wrap; word-wrap: break-word;">{{ raw_xml|e }}</pre>
-    <p><a href="{{ url_for('blast') }}">⬅ Back to BLAST</a></p>
+    <p>No parsed hits found — showing raw BLAST XML:</p>
+    <pre>{{ raw_xml }}</pre>
 
   {% else %}
     <p>No results to display.</p>
-    <p><a href="{{ url_for('blast') }}">⬅ Back to BLAST</a></p>
   {% endif %}
+
+  <p><a href="{{ url_for('blast') }}">Back to BLAST</a> | <a href="{{ url_for('home') }}">Home</a></p>
 </body>
 </html>

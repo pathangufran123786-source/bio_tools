@@ -2,25 +2,24 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>BLAST Tool</title>
+  <title>BLAST form</title>
 </head>
 <body>
   <h1>BLAST Tool</h1>
 
   {% if error %}
-    <p style="color:red;">{{ error }}</p>
+    <p style="color: red;">{{ error }}</p>
   {% endif %}
 
-  <form method="POST">
+  <form method="post" action="{{ url_for('blast') }}">
     <label for="sequence">Sequence (DNA/RNA):</label><br>
     <textarea id="sequence" name="sequence" rows="8" cols="80"
-              placeholder="Paste a nucleotide sequence (short fragments work best)..."></textarea>
+      placeholder="Paste nucleotide sequence here...">{{ request.form.sequence or '' }}</textarea>
     <br><br>
-    <button type="submit">Run BLAST</button>
+    <button type="submit">Run BLAST (NCBI)</button>
   </form>
 
-  <p>Note: This runs an online NCBI BLAST against <code>refseq_rna</code>. Results may take a few seconds — if NCBI is busy you will receive a friendly error and the server will log the details.</p>
-
-  <p><a href="{{ url_for('index') }}">⬅ Back to Home</a></p>
+  <p>Note: This tool runs BLAST on NCBI servers. Short sequences are recommended.</p>
+  <p><a href="{{ url_for('home') }}">Back to Home</a></p>
 </body>
 </html>

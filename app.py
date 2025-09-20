@@ -1,23 +1,28 @@
+import os
 from flask import Flask, render_template, request, redirect, url_for, flash
 from Bio.Seq import Seq
 from Bio.Data import CodonTable
-# The following imports are used for remote BLAST
+
+# Biopython BLAST & Entrez imports
 from Bio.Blast import NCBIWWW, NCBIXML
 from Bio import Entrez
 import io
 
-app = Flask(__name__)
-app.secret_key = "replace-this-with-a-secure-random-key"  # change in production
+# Read email & secret key from environment (required by NCBI + for security)
+ENTREZ_EMAIL = os.environ.get("ENTREZ_EMAIL", "pathangufran123786@gmail.com")
+SECRET_KEY = os.environ.get("SECRET_KEY", "replace-this-with-a-secure-random-key")
 
-#
+Entrez.email = ENTREZ_EMAIL   # NCBI requires a valid email
+
+app = Flask(__name__)
+app.secret_key = SECRET_KEY   # Flask sessions / flash messages
+
 # Simple AA -> codon mapping using the first codon for each amino acid
-#
 standard_table = CodonTable.unambiguous_dna_by_name["Standard"]
 aa_to_codons = {}
 for codon, aa in standard_table.forward_table.items():
     aa_to_codons.setdefault(aa, []).append(codon)
 stop_codons = standard_table.stop_codons  # list of stop codons
-
 
 @app.route("/")
 def home():
@@ -124,29 +129,62 @@ def blast():
     if request.method == 'GET':
         return render_template('blast.html')
 
-    # POST request: user submitted a sequence
     seq = request.form.get('sequence', '').strip()
+    seq = seq.replace('\r', '').replace(' ', '').replace('\n', '')
+
     if not seq:
         return render_template('blast.html', error="Please provide a sequence.")
 
-    try:
-        # Try running BLAST against a smaller DB to reduce timeouts
-        result_handle = NCBIWWW.qblast("blastn", "refseq_rna", seq, format_type="XML", hitlist_size=5)
-        xml_result = result_handle.read()
-        result_handle.close()
+    MAX_LEN = 10000  # keep NCBI happy
+    if len(seq) > MAX_LEN:
+        return render_template('blast.html', error=f"Sequence too long (>{MAX_LEN} nt). Shorten it.")
 
-        # Send raw result to a simple results page
-        return render_template('blast_results.html', raw_xml=xml_result)
+    try:
+        program = "blastn"       # choose blastn / blastx / tblastn
+        database = "nt"          # or "refseq_rna", "swissprot", etc.
+
+        # Run BLAST on NCBI servers
+        result_handle = NCBIWWW.qblast(program, database, seq)
+
+        # Parse XML result
+        blast_record = NCBIXML.read(result_handle)
+
+        hits = []
+        for alignment in blast_record.alignments[:10]:  # top 10
+            for hsp in alignment.hsps[:1]:  # first HSP
+                pct_identity = None
+                try:
+                    pct_identity = round((float(hsp.identities) / float(hsp.align_length)) * 100, 2)
+                except Exception:
+                    pct_identity = None
+
+                hits.append({
+                    'title': alignment.title,
+                    'length': alignment.length,
+                    'hsp_score': getattr(hsp, 'score', None),
+                    'e_value': getattr(hsp, 'expect', None),
+                    'identity': getattr(hsp, 'identities', None),
+                    'align_length': getattr(hsp, 'align_length', None),
+                    'pct_identity': pct_identity,
+                    'query_seq': getattr(hsp, 'query', None),
+                    'match_seq': getattr(hsp, 'match', None),
+                    'sbjct_seq': getattr(hsp, 'sbjct', None),
+                })
+                break
+
+        raw_xml = None
+        if not hits:
+            try:
+                result_handle.seek(0)
+                raw_xml = result_handle.read()
+            except Exception:
+                raw_xml = None
+
+        return render_template('blast_results.html', hits=hits, raw_xml=raw_xml, seq=seq)
 
     except Exception as e:
-        # Print full traceback to logs
-        traceback.print_exc(file=sys.stdout)
+        return render_template('blast.html', error=f"BLAST failed: {str(e)}")
 
-        # Show user-friendly message
-        return render_template(
-            'blast.html',
-            error="BLAST request failed. Possible reasons: NCBI timeout, network issue, or invalid input."
-        )
 
 
 if __name__ == "__main__":
