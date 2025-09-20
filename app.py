@@ -25,7 +25,7 @@ standard_table = CodonTable.unambiguous_dna_by_name["Standard"]
 aa_to_codons = {}
 for codon, aa in standard_table.forward_table.items():
     aa_to_codons.setdefault(aa, []).append(codon)
-stop_codons = standard_table.stop_codons  # list of stop codons
+stop_codons = standard_table.stop_codons  # list of stop codons 
 
 @app.route("/")
 def home():
@@ -136,22 +136,66 @@ JOBS = {}  # job_id -> {"status": "running"|"done"|"error", "result": "<xml/text
 
 def run_blast(job_id, seq, program="blastn", database="nt"):
     """
-    Run BLAST in a background thread and save result in JOBS.
+    Run BLAST in a background thread, parse top hits with Biopython,
+    and store both a JSON-serializable summary and the raw XML.
     """
     try:
-        # Use the Entrez email you already configured earlier
+        # Ensure Entrez email is set (NCBI requirement)
         from Bio import Entrez
         Entrez.email = os.environ.get("ENTREZ_EMAIL", "pathangufran123786@gmail.com")
 
+        # Perform the remote BLAST
         handle = NCBIWWW.qblast(program, database, seq)
-        result_text = handle.read()
+        raw_xml = handle.read()
         handle.close()
 
+        # Try to parse the XML into a Blast record
+        blast_record = None
+        try:
+            blast_record = NCBIXML.read(io.StringIO(raw_xml))
+        except Exception:
+            # fallback: maybe multiple records -> take first
+            try:
+                it = NCBIXML.parse(io.StringIO(raw_xml))
+                blast_record = next(it, None)
+            except Exception:
+                blast_record = None
+
+        # Build compact summary (top 10 alignments, first HSP each)
+        hits = []
+        if blast_record:
+            for alignment in getattr(blast_record, "alignments", [])[:10]:
+                if not getattr(alignment, "hsps", None):
+                    continue
+                hsp = alignment.hsps[0]
+                try:
+                    pct_identity = round((float(hsp.identities) / float(hsp.align_length)) * 100, 2)
+                except Exception:
+                    pct_identity = None
+
+                hits.append({
+                    "title": getattr(alignment, "title", None),
+                    "length": getattr(alignment, "length", None),
+                    "score": getattr(hsp, "score", None),
+                    "expect": getattr(hsp, "expect", None),
+                    "identities": getattr(hsp, "identities", None),
+                    "align_length": getattr(hsp, "align_length", None),
+                    "pct_identity": pct_identity,
+                    "query": getattr(hsp, "query", None),
+                    "match": getattr(hsp, "match", None),
+                    "subject": getattr(hsp, "sbjct", None)
+                })
+
+        # Save both a small summary and the raw XML for download
         JOBS[job_id]["status"] = "done"
-        JOBS[job_id]["result"] = result_text
+        JOBS[job_id]["result"] = {
+            "summary": hits,
+            "raw_xml": raw_xml
+        }
+
     except Exception as e:
         JOBS[job_id]["status"] = "error"
-        JOBS[job_id]["result"] = str(e)
+        JOBS[job_id]["result"] = {"error": str(e)}
 
 @app.route("/blast", methods=["GET", "POST"])
 def blast():
