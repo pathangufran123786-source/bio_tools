@@ -119,81 +119,34 @@ def gc_content():
     return render_template("gc_content.html", result=result, input_seq=input_seq)
 
 
-@app.route("/blast", methods=["GET", "POST"])
+@app.route('/blast', methods=['GET', 'POST'])
 def blast():
-    blast_result = None
-    submission = None
+    if request.method == 'GET':
+        return render_template('blast.html')
 
-    if request.method == "POST":
-        seq = request.form.get("sequence", "").strip()
-        program = request.form.get("program", "blastn")
-        db = request.form.get("db", "nt")
+    # POST request: user submitted a sequence
+    seq = request.form.get('sequence', '').strip()
+    if not seq:
+        return render_template('blast.html', error="Please provide a sequence.")
 
-        if not seq:
-            flash("Please provide a sequence to BLAST.", "warning")
-            return redirect(url_for("blast"))
+    try:
+        # Try running BLAST against a smaller DB to reduce timeouts
+        result_handle = NCBIWWW.qblast("blastn", "refseq_rna", seq, format_type="XML", hitlist_size=5)
+        xml_result = result_handle.read()
+        result_handle.close()
 
-        # Show immediate submission summary
-        submission = {"program": program, "db": db, "sequence": seq[:1000]}
+        # Send raw result to a simple results page
+        return render_template('blast_results.html', raw_xml=xml_result)
 
-        # ---------------------------
-        # REMOTE BLAST: enabled here
-        # ---------------------------
-        # WARNING / PREPARATION:
-        #   1) Set Entrez.email to your real email (NCBI policy).
-        #   2) Use this sparingly and avoid heavy automation.
-        #   3) Queries can take several seconds to return.
-        #
-        # Replace the placeholder email below with your real email address:
-        Entrez.email = "pathangufran123786@gmail.com"   # <- REPLACE with your email before running!
+    except Exception as e:
+        # Print full traceback to logs
+        traceback.print_exc(file=sys.stdout)
 
-        try:
-            # qblast will send the query to NCBI and return an HTTP handle
-            # format_type="XML" returns BLAST XML which we parse with NCBIXML
-            handle = NCBIWWW.qblast(program, db, seq, format_type="XML", hitlist_size=10)
-            blast_xml = handle.read()
-            handle.close()
-
-            # Parse BLAST XML: collect top hits/hsp info
-            blast_records = NCBIXML.parse(io.StringIO(blast_xml))
-            hits = []
-            # NCBIXML.parse yields one or more records; we'll iterate and take alignments
-            for record in blast_records:
-                for alignment in record.alignments[:10]:  # top 10 alignments
-                    for hsp in alignment.hsps[:1]:  # first HSP for each alignment
-                        # compute percent identity (identities / align_length * 100) if available
-                        ident = getattr(hsp, "identities", None)
-                        alin_len = getattr(hsp, "align_length", None)
-                        pct_id = None
-                        if ident is not None and alin_len:
-                            try:
-                                pct_id = round((int(ident) / int(alin_len)) * 100, 2)
-                            except Exception:
-                                pct_id = None
-
-                        hits.append({
-                            "title": getattr(alignment, "title", ""),
-                            "length": getattr(alignment, "length", None),
-                            "score": getattr(hsp, "score", None),
-                            "e_value": getattr(hsp, "expect", None),
-                            "identity": ident,
-                            "align_length": alin_len,
-                            "pct_identity": pct_id
-                        })
-                # Since most qblast queries return a single record, break after first record
-                break
-
-            blast_result = {"hits": hits, "submission": submission}
-            if not hits:
-                blast_result["note"] = "No hits found."
-
-        except Exception as e:
-            # Catch network/NCBI errors and show friendly message
-            flash(f"BLAST error: {e}", "danger")
-            # Provide the submission summary so the user knows what was sent
-            blast_result = {"error": str(e), "submission": submission}
-
-    return render_template("blast.html", result=blast_result)
+        # Show user-friendly message
+        return render_template(
+            'blast.html',
+            error="BLAST request failed. Possible reasons: NCBI timeout, network issue, or invalid input."
+        )
 
 
 if __name__ == "__main__":

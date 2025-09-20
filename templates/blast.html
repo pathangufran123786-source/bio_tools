@@ -1,62 +1,26 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>BLAST</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>BLAST Tool</title>
+</head>
 <body>
-  <h1>BLAST</h1>
+  <h1>BLAST Tool</h1>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      <ul>
-      {% for cat, msg in messages %}
-        <li><strong>{{ cat }}:</strong> {{ msg }}</li>
-      {% endfor %}
-      </ul>
-    {% endif %}
-  {% endwith %}
+  {% if error %}
+    <p style="color:red;">{{ error }}</p>
+  {% endif %}
 
-  <form method="post">
-    <label>Sequence (DNA/protein):</label><br>
-    <textarea name="sequence" rows="6" cols="80"></textarea><br>
-    <label>Program:</label>
-    <select name="program">
-      <option value="blastn">blastn (nucleotide)</option>
-      <option value="blastp">blastp (protein)</option>
-    </select>
-    <label>Database:</label>
-    <input type="text" name="db" value="nt">
+  <form method="POST">
+    <label for="sequence">Sequence (DNA/RNA):</label><br>
+    <textarea id="sequence" name="sequence" rows="8" cols="80"
+              placeholder="Paste a nucleotide sequence (short fragments work best)..."></textarea>
+    <br><br>
     <button type="submit">Run BLAST</button>
   </form>
 
-  {% if result %}
-    {% if result.hits %}
-      <h3>Top Hits</h3>
-      <table border="1" cellpadding="6">
-        <tr>
-          <th>Title</th>
-          <th>Length</th>
-          <th>Score</th>
-          <th>E-value</th>
-          <th>Identity</th>
-          <th>% Identity</th>
-        </tr>
-        {% for hit in result.hits %}
-        <tr>
-          <td>{{ hit.title }}</td>
-          <td>{{ hit.length }}</td>
-          <td>{{ hit.score }}</td>
-          <td>{{ hit.e_value }}</td>
-          <td>{{ hit.identity }}/{{ hit.align_length }}</td>
-          <td>{{ hit.pct_identity }}%</td>
-        </tr>
-        {% endfor %}
-      </table>
-    {% elif result.note %}
-      <p><em>{{ result.note }}</em></p>
-    {% elif result.error %}
-      <p><strong>Error:</strong> {{ result.error }}</p>
-    {% endif %}
-  {% endif %}
+  <p>Note: This runs an online NCBI BLAST against <code>refseq_rna</code>. Results may take a few seconds — if NCBI is busy you will receive a friendly error and the server will log the details.</p>
 
-  <p><a href="{{ url_for('home') }}">&larr; Back to Home</a></p>
+  <p><a href="{{ url_for('index') }}">⬅ Back to Home</a></p>
 </body>
 </html>
